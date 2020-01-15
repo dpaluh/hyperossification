@@ -1,0 +1,117 @@
+#
+# Script to infer ancestral states for hyperossification in frog skulls. States coded as:
+#       0 = non-hyperossified
+#       1 = hyperossified
+#
+# We use reversible-jump MCMC to explore the space of all possible 
+# continuous-time Markov models of phenotypic character evolution.
+#
+
+# settings for analysis
+analysis_name = "ase_freeK_RJ"
+mcmc_gen = 20000
+burnin_gen = 2000
+log_freq = 10
+mvi = 0
+mni = 0
+
+########################
+# import tree and data #
+########################
+phylogeny <- readTrees("data/revbayes_tree.tree")[1]
+morpho <- readDiscreteCharacterData("data/revbayes_traits.nex")
+
+
+# A reversible-jump MCMC model of character evolution:
+# here we assume an equal prior probability on each of
+# the 5 possible evolution models:  
+# 1) no change
+# 2) irreversible 0->1
+# 3) irreversible 1->0
+# 4) 1 rate model
+# 5) 2 rate model
+# Non-zero transition rates are drawn from an exponential
+# distribution. The MCMC will sample from each model
+# proportionately to their posterior probability.
+
+
+# exponential priors for non-zero transition rates
+rate_pr := phylogeny.treeLength() / 10 # 10 transitions per tree 
+
+base_rates[1] ~ dnExp(rate_pr)
+base_rates[2] ~ dnExp(rate_pr)
+moves[++mvi] = mvScale( base_rates[1], weight=2 )
+moves[++mvi] = mvScale( base_rates[2], weight=2 )
+
+# uniform partitioning prior for jumping between models
+rates ~ dnUPP( base_rates, include_zero=true )
+moves[++mvi] = mvUPPAllocation( rates, weight=20 )
+
+rate_01 := rates[1] 
+rate_10 := rates[2] 
+
+
+##########################
+# Set up the rate matrix #
+##########################
+
+Q_morpho := fnFreeK( rates, rescaled=false )
+
+
+#####################################
+# Set up the root state frequencies #
+#####################################
+
+rf_prior <- [1,1]
+rf ~ dnDirichlet( rf_prior )
+moves[++mvi] = mvBetaSimplex( rf, weight=2 )
+moves[++mvi] = mvDirichletSimplex( rf, weight=2 )
+
+
+###################
+# Set up the CTMC #
+###################
+
+# Combine all of our elements into a CTMC.
+
+phyMorpho ~ dnPhyloCTMC(tree=phylogeny, Q=Q_morpho, rootFrequencies=rf, type="Standard")
+phyMorpho.clamp(morpho)
+
+
+############################
+# Set up the MCMC monitors #
+############################
+
+monitors[++mni] = mnModel(filename="output/" + analysis_name + ".log", printgen=log_freq)
+monitors[++mni] = mnScreen(printgen=log_freq, rate_01, rate_10)
+monitors[++mni] = mnJointConditionalAncestralState(tree=phylogeny,ctmc=phyMorpho,filename="output/" + analysis_name + "-anc.log",type="Standard",printgen=log_freq,withTips=true,withStartStates=false)
+
+######################
+# finalize the model #
+######################
+
+mymodel = model(Q_morpho)
+
+
+###########################
+# run the MCMC simulation #
+###########################
+
+# run the MCMC simulation 
+mymcmc = mcmc(mymodel, monitors, moves, nruns=2, combine="mixed")
+mymcmc.burnin(generations=burnin_gen,tuningInterval=log_freq)
+mymcmc.run(generations=mcmc_gen)
+
+# check the performance of the MCMC/moves
+mymcmc.operatorSummary()
+
+
+####################################################################
+# Read in the tree trace and construct the ancestral states (ASE)  #
+####################################################################
+
+anc_states = readAncestralStateTrace("output/" + analysis_name + "-anc.log")
+anc_tree = ancestralStateTree(tree=phylogeny, ancestral_state_trace_vector=anc_states, include_start_states=false, file="output/ancestral_states_" + analysis_name + ".tree", burnin=0, summary_statistic="MAP", site=1)
+
+# Quit RevBayes #
+q()
