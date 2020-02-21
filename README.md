@@ -5,8 +5,8 @@ This repository contains scripts and associated data files for our manuscript on
 
 Datset.S1 - Species/specimens examined in this study with associated data and references
 
-RevBayes files and data for rjMCMC ancestral state reconstructions
+RevBayes files and data for rjMCMC ancestral state reconstructions: mcmc_ase_RJ.Rev, compute_model_posteriors.R,  revbayes_traits.nex, revbayes_tree.tree
 
-geomorph R script and files for geometric morphometric analyses 
+geomorph R script and files for geometric morphometric analyses: classifier.csv, geomorph_script.R, nts_files.zip
 
-STL files for frog skulls available on MorphoSource.com
+STL files for frog skulls available in MorphoSource
